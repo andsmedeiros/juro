@@ -272,34 +272,14 @@ public:
     inline auto finally(T_on_settle &&on_settle) {
         assert_settle_invocable<T_on_settle>();
 
-        using next_value_type = 
-            chained_promise_type<T, T_on_settle, T_on_settle>;
-
-        return make_promise<next_value_type>([&] (auto &next_promise) {
-            this->on_settle = [
-                this,
-                next_promise,
-                on_settle = std::forward<T_on_settle>(on_settle)
-            ] {
-                try {
-                    switch (state) {
-                    case promise_state::RESOLVED:  
-                        handle_resolve(on_settle, next_promise);
-                        break;
-                    
-                    case promise_state::REJECTED:
-                        handle_reject(on_settle, next_promise);
-                        break;
-                    default: break;
-                    }
-                } catch(...) {
-                    next_promise->reject(std::current_exception());
-                }
-            };
-            if(state != promise_state::PENDING) {
-                this->on_settle();
-            }
-        });
+        if constexpr(is_void) {
+            return then(
+                [=] { return on_settle(std::nullopt); }, 
+                std::forward<T_on_settle>(on_settle)
+            );
+        } else {
+            return then(on_settle, on_settle);
+        }
     }
 
 private:
