@@ -1,3 +1,10 @@
+/**
+ * @file juro/promise.hpp
+ * @brief Contains the definition of promise objects and imports other juro
+ * namespaces
+ * @author André Medeiros
+*/
+
 #ifndef JURO_PROMISE_HPP
 #define JURO_PROMISE_HPP
 
@@ -17,20 +24,27 @@ using namespace juro::compose;
 
 /**
  * @brief A promise represents a value that is not available yet.
- * @tparam T The type of the promised value
+ * @tparam T The type of the promised value; defaults to `void` if unspecified.
  */
 template<class T = void>
-class promise final {
+class promise {
     template<class> friend class promise;
 public:
 
     /**
-     * @brief True for void promises, false otherwise
+     * @brief Indicates whether this is a `void` promise type or not.
      */
     static constexpr inline bool is_void = std::is_void_v<T>;
 
     /**
-     * @brief Maps `void` to `void_type`, every other type maps to itself
+     * @brief The promised object type.
+     */
+    using type = T;
+
+    /**
+     * @brief Defines a type suitable to hold this promise's value, no matter
+     * its type. Maps `void` to `void_type`, every other type is mapped to 
+     * itself.
      */
     using value_type = storage_type<T>;
 
@@ -60,12 +74,6 @@ private:
     std::function<void()> on_settle;
 
 public:
-
-    /**
-     * @brief The promised object type.
-     */
-    using type = T;
-
     /**
      * @brief Constructs a pending promise.
      * @warning This should not be called directly; use `juro::make_promise()` 
@@ -74,13 +82,11 @@ public:
     promise() = default;
 
     /**
-     * @brief Constructs a settled promise.
-     * @warning This should not be called directly; use `juro::make_resolved()` 
-     * or `juro::make_rejected()` instead.
-     * @tparam T_value The settled value for this promise.
-     * @param state The state as the promise should be settled.
-     * @param value The value the promise should hold. When rejected, if it is
-     * not an `std::exception_ptr`, it will be stored into one.
+     * @brief Constructs a resolved promise.
+     * @warning This should not be called directly; use `juro::make_resolved()`
+     * instead.
+     * @tparam T_value The type of the value this promise is being resolved with.
+     * @param value The value the promise is being resolved with.
      */
     template<class T_value>
     promise(resolved_promise_tag, T_value &&value) : 
@@ -88,6 +94,14 @@ public:
         value { std::forward<T_value>(value) }
         {  }
 
+    /**
+     * @brief Constructs a rejected promise.
+     * @warning This should not be called directly; use `juro::make_rejected()`
+     * instead.
+     * @tparam T_value The type of the value this promise is being rejected with.
+     * @param  value The value the promise is being rejected with. If it is 
+     * *not* a `std::exception_ptr`, then it is wrapped into one.
+     */
     template<class T_value>
     promise(rejected_promise_tag, T_value &&value) : 
         state { promise_state::REJECTED },
@@ -101,48 +115,68 @@ public:
     promise &operator=(promise &&) = delete;
     promise &operator=(const promise &) = delete;
 
+    /**
+     * @brief Returns the current state of the promise. A promise is pending 
+     * when it does not hold anything yet; it is resolved when it holds a 
+     * `value_type` and is rejected when it holds a `std::exception_ptr`.
+     * @return The current state of the promise.
+     */
     inline promise_state get_state() const noexcept { return state; }
     
+    /**
+     * @brief Returns whether the promise is pending.
+     * @return Whether the promise is pending.
+     */
     inline bool is_pending() const noexcept { 
         return state == promise_state::PENDING; 
     }
     
+    /**
+     * @brief Return whether the promise is resolved.
+     * @return Whether the promise is resolved. 
+     */
     inline bool is_resolved() const noexcept { 
         return state == promise_state::RESOLVED; 
     }
     
+    /**
+     * @brief Return whether the promise is rejected.
+     * @return Whether the promise is rejected. 
+     */
     inline bool is_rejected() const noexcept { 
         return state == promise_state::REJECTED; 
     }
     
+
+    /**
+     * @brief Return whether the promise is either resolved or rejected.
+     * @return Whether the promise is either resolved or rejected. 
+     */
     inline bool is_settled() const noexcept { 
         return state != promise_state::PENDING; 
     }
 
-    template<class T_value>
-    inline bool holds_value() const noexcept { 
-        return std::holds_alternative<T_value>(value); 
-    }
-
-    inline bool is_empty() const noexcept {
-        return std::holds_alternative<empty_type>(value);
-    }
-
-    inline bool has_handler() const noexcept { 
-        return static_cast<bool>(on_settle); 
-    }
-
+    /**
+     * @brief Returns the resolved value stored in the promise. If the promise
+     * is not resolved, will propagate a `std::bad_variant_access` exception.
+     * @return The resolved value.
+     */
     value_type &get_value() {
         return std::get<value_type>(value);
     }
 
+    /**
+     * @brief Returns the rejected value stored in the promise. If the promise
+     * is not rejected, will propagate a `std::bad_variant_access` exception.
+     * @return The rejected value.
+     */
     std::exception_ptr &get_error() {
         return std::get<std::exception_ptr>(value);
     }
 
     /**
      * @brief Resolves the promise with a given value. Fires the settle handler 
-     * if there is one attached.
+     * if there is one already attached.
      * @tparam T_value The value type with which to settle the promise. Must be
      * convertible to `T`.
      * @param resolved_value The value with which to settle the promise.
@@ -243,11 +277,13 @@ public:
     /**
      * @brief Attaches a resolve handler to the promise, overwriting any 
      * previously attached one. In case of rejection, the error will be 
-     * propagated.
+     * propagated down the promise chain.
      * @tparam T_on_resolve The type of the resolve handler; should receive the
      * promise type as parameter, preferably by reference.
      * @param on_resolve The functor to be invoked when the promise is resolved.
-     * @return 
+     * @return A new promise of a type that depends on the type returned by the
+     * functor provided.
+     * @see `juro::type_helpers::chained_promise_type`
      */
     template<class T_on_resolve>
     inline auto then(T_on_resolve &&on_resolve) {
@@ -256,6 +292,17 @@ public:
         });
     }
 
+    /**
+     * @brief Attaches a reject handler to the promise, overwriting any
+     * previously attached one. If resolved, the value will be passed down
+     * along the promise chain.
+     * @tparam T_on_reject The type of the reject handler; should receive a
+     * `std::exception_ptr` as parameter, preferably by reference.
+     * @param on_reject The functor to be invoked when the promise is rejected.
+     * @return A new promise of a type that depends on the type returned by the
+     * functor provided.
+     * @see `juro::type_helpers::chained_promise_type`
+     */
     template<class T_on_reject>
     inline auto rescue(T_on_reject &&on_reject) {
         if constexpr(is_void) {
@@ -268,6 +315,19 @@ public:
         }
     }
 
+    /**
+     * @brief Attaches a settle handler to the promise, overwriting any
+     * previously attached one. The handler will be invoked upon settling
+     * whether the promise is resolved or rejected.
+     * @tparam T_on_reject The type of the settle handler; should receive as
+     * parameter a `juro::test_helpers::finally_argument_t`, preferably by
+     * reference.
+     * @param on_reject The functor to be invoked when the promise is settled.
+     * @return A new promise of a type that depends on the type returned by the
+     * functor provided.
+     * @see `juro::type_helpers::chained_promise_type`
+     * @see `juro::type_helpers::finally_argument_t`
+     */
     template<class T_on_settle>
     inline auto finally(T_on_settle &&on_settle) {
         assert_settle_invocable<T_on_settle>();
@@ -283,6 +343,11 @@ public:
     }
 
 private:
+    /**
+     * @brief Asserts that a particular callable type is suitable to be invoked
+     * when the promise is resolved.
+     * @tparam T_on_resolve The callable type.
+     */
     template<class T_on_resolve>
     static inline void assert_resolve_invocable() noexcept {
         static_assert(
@@ -292,6 +357,11 @@ private:
         );
     }
 
+    /**
+     * @brief Asserts that a particular callable type is suitable to be invoked
+     * when the promise is rejected.
+     * @tparam T_on_resolve The callable type.
+     */
     template<class T_on_reject>
     static inline void assert_reject_invocable() noexcept {
         static_assert(
@@ -300,6 +370,11 @@ private:
         );
     }
 
+    /**
+     * @brief Asserts that a particular callable type is suitable to be invoked
+     * when the promise is settled.
+     * @tparam T_on_resolve The callable type.
+     */
     template<class T_on_settle>
     static inline void assert_settle_invocable() noexcept {
         static_assert(
@@ -308,67 +383,77 @@ private:
         );
     }
 
+    /**
+     * @brief Handles promise resolution, calling the resolve handler and 
+     * resolving the chained promise.
+     * @tparam T_on_resolve The type of the resolve handler
+     * @tparam T_next_promise The type of the chained promise
+     * @param on_resolve The resolve handler to be invoked
+     * @param next_promise The chained promise
+     */
     template<class T_on_resolve, class T_next_promise>
-    std::enable_if_t<is_void && resolves_void_v<T, T_on_resolve>>
-    handle_resolve(T_on_resolve &on_resolve, T_next_promise &next_promise) {
-        on_resolve();
-        next_promise->resolve();
+    void handle_resolve(T_on_resolve &on_resolve, T_next_promise &next_promise) {
+        if constexpr(is_void) {
+            if constexpr(resolves_void_v<T, T_on_resolve>) {
+                on_resolve();
+                next_promise->resolve();
+            }
+            if constexpr(resolves_value_v<T, T_on_resolve>) {
+                next_promise->resolve(on_resolve());
+            }
+            if constexpr(resolves_promise_v<T, T_on_resolve>) {
+                on_resolve()->pipe(next_promise);
+            }
+        } else {
+            if constexpr(resolves_void_v<T, T_on_resolve>) {
+                on_resolve(std::get<T>(value));
+                next_promise->resolve();
+            }
+            if constexpr(resolves_value_v<T, T_on_resolve>) {
+                next_promise->resolve(on_resolve(std::get<T>(value)));
+            }
+            if constexpr(resolves_promise_v<T, T_on_resolve>) {
+                on_resolve(std::get<T>(value))->pipe(next_promise);
+            }
+
+        }
     }
 
-    template<class T_on_resolve, class T_next_promise>
-    std::enable_if_t<is_void && resolves_value_v<T, T_on_resolve>>
-    handle_resolve(T_on_resolve &on_resolve, T_next_promise &next_promise) {
-        next_promise->resolve(on_resolve());
-    }
-
-    template<class T_on_resolve, class T_next_promise>
-    std::enable_if_t<is_void && resolves_promise_v<T, T_on_resolve>>
-    handle_resolve(T_on_resolve &on_resolve, T_next_promise &next_promise) {
-        on_resolve()->pipe(next_promise);
-    } 
-
-    template<class T_on_resolve, class T_next_promise>
-    std::enable_if_t<!is_void && resolves_void_v<T, T_on_resolve>>
-    handle_resolve(T_on_resolve &on_resolve, T_next_promise &next_promise) {
-        on_resolve(std::get<T>(value));
-        next_promise->resolve();
-    }
-
-    template<class T_on_resolve, class T_next_promise>
-    std::enable_if_t<!is_void && resolves_value_v<T, T_on_resolve>>
-    handle_resolve(T_on_resolve &on_resolve, T_next_promise &next_promise) {
-        next_promise->resolve(on_resolve(std::get<T>(value)));
-    }
-
-    template<class T_on_resolve, class T_next_promise>
-    std::enable_if_t<!is_void && resolves_promise_v<T, T_on_resolve>>
-    handle_resolve(T_on_resolve &on_resolve, T_next_promise &next_promise) {
-        on_resolve(std::get<T>(value))->pipe(next_promise);
-    }
-
+    /**
+     * @brief Handler promise rejection, calling the reject handler and
+     * resolving the chained promise.
+     * @tparam T_on_reject The type of the reject handler
+     * @tparam T_next_promise The type of the chained promise
+     * @param on_reject The reject handler to be invoked
+     * @param next_promise The chained promise
+     */
     template<class T_on_reject, class T_next_promise>
-    std::enable_if_t<rejects_void_v<T_on_reject>>
-    handle_reject(T_on_reject &&on_reject, T_next_promise &next_promise) {
-        on_reject(std::get<std::exception_ptr>(value));
-        next_promise->resolve();
+    void handle_reject(T_on_reject &&on_reject, T_next_promise &next_promise) {
+        if constexpr(rejects_void_v<T_on_reject>) {
+            on_reject(std::get<std::exception_ptr>(value));
+            next_promise->resolve();
+        }
+        if constexpr(rejects_value_v<T_on_reject>) {
+            auto &rejected_value = std::get<std::exception_ptr>(value);
+            next_promise->resolve(on_reject(rejected_value));
+        }
+        if constexpr(rejects_promise_v<T_on_reject>) {
+            auto &rejected_value = std::get<std::exception_ptr>(value);
+            on_reject(rejected_value)->pipe(next_promise);
+
+        }
     }
 
-    template<class T_on_reject, class T_next_promise>
-    std::enable_if_t<rejects_value_v<T_on_reject>>
-    handle_reject(T_on_reject &&on_reject, T_next_promise &next_promise) {
-        auto &rejected_value = std::get<std::exception_ptr>(value);
-        next_promise->resolve(on_reject(rejected_value));
-    }
-
-    template<class T_on_reject, class T_next_promise>
-    std::enable_if_t<rejects_promise_v<T_on_reject>>
-    handle_reject(T_on_reject &&on_reject, T_next_promise &next_promise) {
-        auto &rejected_value = std::get<std::exception_ptr>(value);
-        on_reject(rejected_value)->pipe(next_promise);
-    }
-
+    /**
+     * @brief Prepares a value for rejection: wraps the supplied value into a 
+     * `std::exception_ptr` unless it already is one, in which case it is simply
+     * returned.
+     * @tparam T_value The type of value to be prepared
+     * @param value The value to be prepared for rejection
+     * @return A `std::exception_ptr` suitable for promise rejection.
+     */
     template<class T_value>
-    std::exception_ptr rejection_value(T_value &&value) {
+    inline auto rejection_value(T_value &&value) {
         using bare_type = std::remove_cv_t<std::remove_reference_t<T_value>>;
         if constexpr(std::is_same_v<bare_type, std::exception_ptr>) {
             return std::forward<T_value>(value);
@@ -377,20 +462,60 @@ private:
         }
     }
     
+    /**
+     * @brief Pipes a promise into another: when the current promise is settled,
+     * the next will be too with the same state and value.
+     * @tparam T_next_promise The target promise type
+     * @param next_promise the The target promise
+     */
     template<class T_next_promise>
     inline void pipe(T_next_promise &&next_promise) {
         if constexpr(is_void) {
             then(
                 [=] { next_promise->resolve(); },
-                [=] (auto &error) { next_promise->reject(error); }
+                [=] (auto &error) { next_promise->reject(std::move(error)); }
             );
         } else {
             then(
-                [=] (auto &value) { next_promise->resolve(value); },
-                [=] (auto &error) { next_promise->reject(error); }
+                [=] (auto &value) { next_promise->resolve(std::move(value)); },
+                [=] (auto &error) { next_promise->reject(std::move(error)); }
             );
         }
     }
+    
+#ifdef JURO_TEST
+public:
+    /**
+     * @brief Helper function to determine if this promise holds a determinate 
+     * value type.
+     * @tparam T_value The type being evaluated.
+     * @return Whether the promise's value container holds a value of type 
+     * `T_value` or not.
+     */
+    template<class T_value>
+    inline bool holds_value() const noexcept { 
+        return std::holds_alternative<T_value>(value); 
+    }
+
+    /**
+     * @brief Helper function to determine if this promise holds no meaningful 
+     * value, i.e., an `empty_type`.
+     * @return Whether this promise's value container holds a value of type
+     * `empty_type` or not.
+     */
+    inline bool is_empty() const noexcept {
+        return std::holds_alternative<empty_type>(value);
+    }
+
+    /**
+     * @brief Helper function to determine if this promise has a settle handler
+     * attached.
+     * @return Whether there is a settle handler attached or not.
+     */
+    inline bool has_handler() const noexcept { 
+        return static_cast<bool>(on_settle); 
+    }
+#endif /* JURO_TEST */
 };
 
 } /* namespace juro */
