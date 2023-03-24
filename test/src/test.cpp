@@ -15,7 +15,7 @@ using namespace std::string_literals;
 SCENARIO("promise can be created on every state") {
     GIVEN("a pending promise factory function") {
         WHEN("it is called with no parameter") {
-            auto promise = juro::make_promise();
+            auto promise = juro::make_pending();
 
             THEN("it should create a pending `void` promise") {
                 STATIC_REQUIRE(std::is_void_v<
@@ -52,7 +52,7 @@ SCENARIO("promise can be created on every state") {
 
     GIVEN("a rejected promise factory function") {
         WHEN("it is called with a `std::string` parameter") {
-            auto promise = juro::make_rejected("Rejected promise"s);
+            auto promise = juro::make_rejected<std::string>("Rejected promise"s);
 
             THEN("it should create a rejected `std::string` promise") {
                 STATIC_REQUIRE(std::is_same_v<
@@ -77,7 +77,7 @@ SCENARIO("promise can be created on every state") {
 
 SCENARIO("promises should resolve and reject accordingly") {
     GIVEN("a pending promise") {
-        auto promise = juro::make_promise<bool>();
+        auto promise = juro::make_pending<bool>();
 
         WHEN("resolve() is called") {
             auto result = attempt([&] { promise->resolve(true); });
@@ -174,7 +174,7 @@ SCENARIO("promises must not be resettled") {
 
 SCENARIO("promises should be chainable") {
     GIVEN("a pending promise") {
-        auto promise = juro::make_promise<int>();
+        auto promise = juro::make_pending<int>();
 
         WHEN("`then` is called with one argument") {
             auto next = promise->then([] (int value) { return value; });
@@ -283,9 +283,9 @@ SCENARIO("promises should be chainable") {
 SCENARIO("promises should be composable") {
     GIVEN("a promise composition function `all()`") {
         WHEN("called with three promises of different types") {
-            auto p1 = juro::make_promise<int>();
-            auto p2 = juro::make_promise<std::string>();
-            auto p3 = juro::make_promise();
+            auto p1 = juro::make_pending<int>();
+            auto p2 = juro::make_pending<std::string>();
+            auto p3 = juro::make_pending();
 
             auto all_result = attempt([&] {
                 return juro::all(p1, p2, p3);
@@ -375,9 +375,9 @@ SCENARIO("promises should be composable") {
 
     GIVEN("a promise composition function `race()`") {
         WHEN("called with three promises of different types") {
-            auto p1 = juro::make_promise<int>();
-            auto p2 = juro::make_promise<std::string>();
-            auto p3 = juro::make_promise();
+            auto p1 = juro::make_pending<int>();
+            auto p2 = juro::make_pending<std::string>();
+            auto p3 = juro::make_pending();
 
             auto race_result = attempt([&] { return juro::race(p1, p2, p3); });
 
