@@ -221,6 +221,9 @@ struct unique<std::tuple<>, std::tuple<T_values...>> :
 template<class ...T_values>
 using unique_t = typename unique<std::tuple<>, std::tuple<T_values...>>::type;
 
+template<class T>
+using bare_t = std::remove_reference_t<std::remove_cv_t<T>>;
+
 } /* namespace juro::helpers */
 
 #endif /* JURO_HELPERS_HPP */
