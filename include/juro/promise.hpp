@@ -76,8 +76,8 @@ private:
 public:
     /**
      * @brief Constructs a pending promise.
-     * @warning This should not be called directly; use `juro::make_promise()` 
-     * instead.
+     * @warning This should not be called directly; use `juro::make_pending()` 
+     * or `juro::make_promise()` instead.
      */
     promise() = default;
 
@@ -236,7 +236,7 @@ public:
      * @param on_reject The functor to be invoked when the promise is rejected.
      * @return A new promise of a type that depends on the types returned by the
      * functors provided.
-     * @see `juro::type_helpers::chained_promise_type`
+     * @see `juro::helpers::chained_promise_type`
      */
     template<class T_on_resolve, class T_on_reject>
     auto then(T_on_resolve &&on_resolve, T_on_reject &&on_reject) {
@@ -283,7 +283,7 @@ public:
      * @param on_resolve The functor to be invoked when the promise is resolved.
      * @return A new promise of a type that depends on the type returned by the
      * functor provided.
-     * @see `juro::type_helpers::chained_promise_type`
+     * @see `juro::helpers::chained_promise_type`
      */
     template<class T_on_resolve>
     inline auto then(T_on_resolve &&on_resolve) {
@@ -301,7 +301,7 @@ public:
      * @param on_reject The functor to be invoked when the promise is rejected.
      * @return A new promise of a type that depends on the type returned by the
      * functor provided.
-     * @see `juro::type_helpers::chained_promise_type`
+     * @see `juro::helpers::chained_promise_type`
      */
     template<class T_on_reject>
     inline auto rescue(T_on_reject &&on_reject) {
@@ -319,14 +319,12 @@ public:
      * @brief Attaches a settle handler to the promise, overwriting any
      * previously attached one. The handler will be invoked upon settling
      * whether the promise is resolved or rejected.
-     * @tparam T_on_reject The type of the settle handler; should receive as
-     * parameter a `juro::test_helpers::finally_argument_t`, preferably by
-     * reference.
-     * @param on_reject The functor to be invoked when the promise is settled.
+     * @tparam T_on_settle The type of the settle handler; should receive as
+     * parameter a `juro::helpers::finally_argument_t`, preferably by reference.
      * @return A new promise of a type that depends on the type returned by the
      * functor provided.
-     * @see `juro::type_helpers::chained_promise_type`
-     * @see `juro::type_helpers::finally_argument_t`
+     * @see `juro::helpers::chained_promise_type`
+     * @see `juro::helpers::finally_argument_t`
      */
     template<class T_on_settle>
     inline auto finally(T_on_settle &&on_settle) {
