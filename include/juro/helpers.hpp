@@ -1,5 +1,5 @@
 /**
- * @file promise/helpers.hpp
+ * @file juro/helpers.hpp
  * @brief Contains type helpers used throughout the library
  * @author André Medeiros
 */
