@@ -12,6 +12,8 @@ class safe_result {
     std::variant<storage_type<T>, std::exception_ptr> value;
 
 public:
+    using value_type = T;
+
     template<class T_value>
     safe_result(T_value &&value) : 
         value { std::forward<T_value>(value) }
