@@ -25,10 +25,10 @@ using namespace juro::helpers;
 template<class T = void, class T_launcher>
 auto make_promise(T_launcher &&launcher) {
     static_assert(
-        std::is_invocable_v<T_launcher, promise_ptr<T> &>,
+        std::is_invocable_v<T_launcher, const promise_ptr<T> &>,
         "Launcher function has an incompatible signature."
     );
-    auto p = std::make_shared<promise<T>>();
+    const auto p = std::make_shared<promise<T>>();
     launcher(p);
     return p;
 }
