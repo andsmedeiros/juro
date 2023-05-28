@@ -22,15 +22,97 @@ using namespace juro::helpers;
 using namespace juro::factories;
 using namespace juro::compose;
 
+class promise_interface {
+private:
+    /**
+     * @brief Holds the current state of the promise; Once settled, it cannot be
+     * changed.
+     */
+    promise_state state = promise_state::PENDING;
+
+    /**
+     * @brief Type-erased callback to be executed once the promise is settled.
+     */
+    std::function<void()> on_settle;
+
+protected:
+    promise_interface() noexcept = default;
+    promise_interface(promise_state state) noexcept;
+    promise_interface(const promise_interface &) = delete;
+    promise_interface(promise_interface &&) noexcept = default;
+
+    promise_interface &operator=(const promise_interface &) = delete;
+    promise_interface &operator=(promise_interface &&) noexcept = default;
+    virtual ~promise_interface() = default;
+
+    void set_settle_handler(std::function<void()> &&handler) noexcept;
+    void resolved() noexcept;
+    void rejected();
+
+public:
+    /**
+     * @brief Returns the current state of the promise. A promise is pending
+     * when it does not hold anything yet; it is resolved when it holds a
+     * `value_type` and is rejected when it holds a `std::exception_ptr`.
+     * @return The current state of the promise.
+     */
+    inline promise_state get_state() const noexcept { return state; }
+
+    /**
+     * @brief Returns whether the promise is pending.
+     * @return Whether the promise is pending.
+     */
+    inline bool is_pending() const noexcept {
+        return state == promise_state::PENDING;
+    }
+
+    /**
+     * @brief Return whether the promise is resolved.
+     * @return Whether the promise is resolved.
+     */
+    inline bool is_resolved() const noexcept {
+        return state == promise_state::RESOLVED;
+    }
+
+    /**
+     * @brief Return whether the promise is rejected.
+     * @return Whether the promise is rejected.
+     */
+    inline bool is_rejected() const noexcept {
+        return state == promise_state::REJECTED;
+    }
+
+
+    /**
+     * @brief Return whether the promise is either resolved or rejected.
+     * @return Whether the promise is either resolved or rejected.
+     */
+    inline bool is_settled() const noexcept {
+        return state != promise_state::PENDING;
+    }
+
+#ifdef JURO_TEST
+    /**
+     * @brief Helper function to determine if this promise has a settle handler
+     * attached.
+     * @return Whether there is a settle handler attached or not.
+     */
+    inline bool has_handler() const noexcept {
+        return static_cast<bool>(on_settle);
+    }
+#endif /* JURO_TEST */
+
+};
+
 /**
  * @brief A promise represents a value that is not available yet.
  * @tparam T The type of the promised value; defaults to `void` if unspecified.
  */
 template<class T = void>
-class promise {
+class promise : public promise_interface {
     template<class> friend class promise;
-public:
 
+public:
     /**
      * @brief Indicates whether this is a `void` promise type or not.
      */
@@ -58,20 +140,9 @@ public:
 
 private:
     /**
-     * @brief Holds the current state of the promise; Once settled, it cannot be
-     * changed.
-     */
-    promise_state state = promise_state::PENDING;
-
-    /**
      * @brief Holds the settled value or `empty_type` if the promise is pending.
      */
     settle_type value;
-
-    /**
-     * @brief Type-erased callback to be executed once the promise is settled.
-     */
-    std::function<void()> on_settle;
 
 public:
     /**
@@ -89,8 +160,8 @@ public:
      * @param value The value the promise is being resolved with.
      */
     template<class T_value>
-    promise(resolved_promise_tag, T_value &&value) : 
-        state { promise_state::RESOLVED },
+    promise(resolved_promise_tag, T_value &&value) :
+        promise_interface { promise_state::RESOLVED },
         value { std::forward<T_value>(value) }
         {  }
 
@@ -104,7 +175,7 @@ public:
      */
     template<class T_value>
     promise(rejected_promise_tag, T_value &&value) : 
-        state { promise_state::REJECTED },
+        promise_interface { promise_state::REJECTED },
         value { rejection_value(std::forward<T_value>(value)) }
         {  }
 
@@ -115,46 +186,6 @@ public:
     promise &operator=(promise &&) = delete;
     promise &operator=(const promise &) = delete;
 
-    /**
-     * @brief Returns the current state of the promise. A promise is pending 
-     * when it does not hold anything yet; it is resolved when it holds a 
-     * `value_type` and is rejected when it holds a `std::exception_ptr`.
-     * @return The current state of the promise.
-     */
-    inline promise_state get_state() const noexcept { return state; }
-    
-    /**
-     * @brief Returns whether the promise is pending.
-     * @return Whether the promise is pending.
-     */
-    inline bool is_pending() const noexcept { 
-        return state == promise_state::PENDING; 
-    }
-    
-    /**
-     * @brief Return whether the promise is resolved.
-     * @return Whether the promise is resolved. 
-     */
-    inline bool is_resolved() const noexcept { 
-        return state == promise_state::RESOLVED; 
-    }
-    
-    /**
-     * @brief Return whether the promise is rejected.
-     * @return Whether the promise is rejected. 
-     */
-    inline bool is_rejected() const noexcept { 
-        return state == promise_state::REJECTED; 
-    }
-    
-
-    /**
-     * @brief Return whether the promise is either resolved or rejected.
-     * @return Whether the promise is either resolved or rejected. 
-     */
-    inline bool is_settled() const noexcept { 
-        return state != promise_state::PENDING; 
-    }
 
     /**
      * @brief Returns the resolved value stored in the promise. If the promise
@@ -188,16 +219,12 @@ public:
             "Resolved value is not convertible to promise type"
         );
 
-        if(state != promise_state::PENDING) {
-            throw promise_error { "Attempted to resolve settled promise" };
+        if(is_settled()) {
+            throw promise_error { "Attempted to resolve an already settled promise" };
         }
 
-        state = promise_state::RESOLVED;
         value = std::forward<T_value>(resolved_value);
-
-        if(on_settle) {
-            on_settle();
-        }
+        resolved();
     }
 
     /**
@@ -208,21 +235,13 @@ public:
      * is not an `std::exception_ptr`, it will be stored into one.
      */
     template<class T_value = promise_error>
-    void reject(T_value &&rejected_value = 
-        promise_error { "Promise was rejected" }
-    ) {
-        if(state != promise_state::PENDING) {
-            throw promise_error { "Attempted to reject settled promise" };
+    void reject(T_value &&rejected_value = promise_error { "Promise was rejected" }) {
+        if(is_settled()) {
+            throw promise_error { "Attempted to reject an already settled promise" };
         }
 
-        state = promise_state::REJECTED;
         value = rejection_value(std::forward<T_value>(rejected_value));
-
-        if(on_settle) {
-            on_settle();
-        } else {
-            throw promise_error { "Unhandled promise rejection" }; 
-        }
+        rejected();
     }
 
     /**
@@ -247,30 +266,22 @@ public:
             chained_promise_type<T, T_on_resolve, T_on_reject>;
 
         return make_promise<next_value_type>([&] (auto &next_promise) {
-            on_settle = [
-                this,
-                next_promise,
-                on_resolve = std::forward<T_on_resolve>(on_resolve),
-                on_reject = std::forward<T_on_reject>(on_reject)
-            ] {
+            set_settle_handler([
+               this,
+               next_promise,
+               on_resolve = std::forward<T_on_resolve>(on_resolve),
+               on_reject = std::forward<T_on_reject>(on_reject)
+           ] {
                 try {
-                    switch (state) {
-                    case promise_state::RESOLVED:  
+                    if(is_resolved()) {
                         handle_resolve(on_resolve, next_promise);
-                        break;
-                    
-                    case promise_state::REJECTED:
+                    } else if(is_rejected()) {
                         handle_reject(on_reject, next_promise);
-                        break;
-                    default: break;
                     }
                 } catch(...) {
                     next_promise->reject(std::current_exception());
                 }
-            };
-            if(state != promise_state::PENDING) {
-                on_settle();
-            }
+            });
         });
     }
 
@@ -287,9 +298,7 @@ public:
      */
     template<class T_on_resolve>
     inline auto then(T_on_resolve &&on_resolve) {
-        return then(std::forward<T_on_resolve>(on_resolve), [] (auto &error) {
-            std::rethrow_exception(error);
-        });
+        return then(std::forward<T_on_resolve>(on_resolve), std::rethrow_exception);
     }
 
     /**
@@ -505,14 +514,6 @@ public:
         return std::holds_alternative<empty_type>(value);
     }
 
-    /**
-     * @brief Helper function to determine if this promise has a settle handler
-     * attached.
-     * @return Whether there is a settle handler attached or not.
-     */
-    inline bool has_handler() const noexcept { 
-        return static_cast<bool>(on_settle); 
-    }
 #endif /* JURO_TEST */
 };
 
