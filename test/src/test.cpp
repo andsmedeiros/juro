@@ -125,7 +125,7 @@ SCENARIO("promises must not be resettled") {
                 REQUIRE(result.has_error());
                 REQUIRE(result.holds_error<promise_error>());
                 REQUIRE(result.get_error<promise_error>().what() == 
-                    "Attempted to resolve settled promise"s
+                    "Attempted to resolve an already settled promise"s
                 );
             }
         }
@@ -137,7 +137,7 @@ SCENARIO("promises must not be resettled") {
                 REQUIRE(result.has_error());
                 REQUIRE(result.holds_error<promise_error>());
                 REQUIRE(result.get_error<promise_error>().what() == 
-                    "Attempted to reject settled promise"s
+                    "Attempted to reject an already settled promise"s
                 );
             }
         }
@@ -153,7 +153,7 @@ SCENARIO("promises must not be resettled") {
                 REQUIRE(result.has_error());
                 REQUIRE(result.holds_error<promise_error>());
                 REQUIRE(result.get_error<promise_error>().what() == 
-                    "Attempted to resolve settled promise"s
+                    "Attempted to resolve an already settled promise"s
                 );
             }
         }
@@ -165,7 +165,7 @@ SCENARIO("promises must not be resettled") {
                 REQUIRE(result.has_error());
                 REQUIRE(result.holds_error<promise_error>());
                 REQUIRE(result.get_error<promise_error>().what() == 
-                    "Attempted to reject settled promise"s
+                    "Attempted to reject an already settled promise"s
                 );
             }
         }
@@ -371,6 +371,27 @@ SCENARIO("promises should be composable") {
                 }
             }
         }
+
+        WHEN("called with only void promises") {
+            auto p1 = juro::make_pending();
+            auto p2 = juro::make_pending();
+            auto p3 = juro::make_pending();
+
+            auto all_result = attempt([&] {
+                return juro::all(p1, p2, p3);
+            });
+
+            THEN("it must not throw an exception") {
+                REQUIRE_FALSE(all_result.has_error());
+
+                AND_THEN("the type of the returned promise must also be void") {
+                    STATIC_REQUIRE(
+                        std::is_same_v<decltype(all_result)::value_type, juro::promise_ptr<void>>
+                    );
+                }
+            }
+        }
+
     }
 
     GIVEN("a promise composition function `race()`") {
