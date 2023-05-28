@@ -31,10 +31,8 @@
 *.out
 *.app
 
+.idea
 .vscode
-test/CMakeFiles
-test/cmake_install.cmake
-test/CMakeCache.txt
-test/Makefile
-test/test
-test/*.cmake
+cmake-build-debug
+dist
+docs
