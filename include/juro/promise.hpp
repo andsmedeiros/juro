@@ -298,7 +298,10 @@ public:
      */
     template<class T_on_resolve>
     inline auto then(T_on_resolve &&on_resolve) {
-        return then(std::forward<T_on_resolve>(on_resolve), std::rethrow_exception);
+        return then(
+            std::forward<T_on_resolve>(on_resolve),
+            [this] (auto &error) -> resolve_result_t<T, T_on_resolve> { std::rethrow_exception(error); }
+        );
     }
 
     /**
