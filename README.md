@@ -33,6 +33,9 @@ maintaining a readable and safe interface.
       * [Synchronous chaining](#synchronous-chaining)
       * [Asynchronous chaining](#asynchronous-chaining)
       * [Chained promise type](#chained-promise-type)
+    * [Promise composition](#promise-composition)
+      * [`juro::all()`](#juroall)
+      * [`juro::race()`](#jurorace)
     * [Promise lifetime and memory management](#promise-lifetime-and-memory-management)
   * [Roadmap](#roadmap)
 <!-- TOC -->
@@ -704,6 +707,105 @@ juro::make_pending()
     ); // returns `juro::promise_ptr<std::variant<std::string, float>>`
 ```
 
+### Promise composition
+
+There are currently two functions that compose multiple promises in a single one:
+
+#### `juro::all()`
+
+`juro::all()` takes a variable number of promises and maps their resolved values to an 
+`std::tuple`.
+
+```C++
+template<class ...T_promises>
+auto juro::all(const juro::promise_ptr<T_promises> &...promises);
+```
+
+For each promise type `T` in `T_promises...`, `T` is mapped to a suitable storage type `U`: 
+if `T` is `void`, `U` is `juro::void_type`; otherwise `U` is `T`. The resolved tuple is of type
+`std::tuple<U_promises...>`, where `U_promises` is a parameter pack containing each `U`, in the
+same order as their mapped `T`.
+
+```C++
+#include <juro/compose/all.hpp>
+
+// returns juro::promise_ptr<std::tuple<int, std::string, juro::void_type>>
+juro::all(
+    juro::make_pending<int>(), 
+    juro::make_pending<std::string>(), 
+    juro::make_pending()
+)
+->then([] (auto &result) {
+    auto [ number, text, nil ] = result;
+    // number is int, text is std::string, nil is juro::void_type
+});
+```
+
+Once *all* provided promises are resolved, the composed promise is resolved with the corresponding
+tuple type. If *any* promise rejects, however, the composed promise will be rejected with that
+same error parameter. Only the first rejection is handled, subsequent errors are silently 
+swallowed.
+
+`juro::all()` has a special behaviour when all provided promises are of type `void`. In this case,
+it will return simply a `juro::promise_ptr<void>`.
+
+```C++
+// because all three promises are `void`, returns `juro::promise_ptr<void>`
+juro::all(
+    juro::make_pending(), 
+    juro::make_pending(), 
+    juro::make_pending()
+)
+->then([] { std::cout << "All resolved!" << std::endl; });
+```
+
+#### `juro::race()`
+
+`juro::race()` takes a variable number of promises and returns a composed promise that is resolved 
+as soon as any of the provided promises is resolved, with the same value.
+
+```C++
+template<class ...T_promises>
+auto juro::race(const juro::promise_ptr<T_promises> &...promises);
+```
+
+The type of the composed promise is a storage type suitable for storing a resolved value from *any*
+of the provided promises. To deduce this container, a unique list of types in `T_promises...` is
+extracted and then mapped to suitable storage types, similarly to what happens in `juro::all()`: 
+for each unique type `T` in `T_promises...`, we determine a type `U` that is `T` is `T` is 
+non-void and `juro::void_type` otherwise. The parameter pack of unique, storage-mapped types is
+`U_promises`.
+
+`juro::race()` then proceeds to return an `std::variant<U_promises...>`.
+
+```C++
+juro::race(
+    juro::make_pending<int>(),
+    juro::make_pending<std::string>(),
+    juro::make_pending()
+)
+->then([] (auto &result) {
+    // result is a std::variant<int, std::string, juro::void_type>
+});
+```
+
+```C++
+juro::race(
+    juro::make_pending<int>(),
+    juro::make_pending<bool>(),
+    juro::make_pending<bool>(),
+    juro::make_pending<std::string>()
+)
+->then([] (auto &result) {
+    // result is a std::variant<int, bool, std::string>
+});
+```
+
+The first promise to settle will also cause the composed promise to be settled in the same way;
+any subsequent settling, whether resolution or rejection, will be silently swallowed.
+
+Unlike `juro::all()`, `juro::race()` does not yet implement all-`void` promises special behaviour.
+
 ### Promise lifetime and memory management
 
 Promises are meant to be immovable objects accessed solely through a `juro::promise_ptr`. 
@@ -747,10 +849,16 @@ juro::promise_ptr<int> async_number_generator() {
 > keep only pending segments allocated as they are needed by releasing no longer necessary promise
 > pointers.
 
-TODO: Continue
-
 ## Roadmap
-- Comprehensive test suite
-- Comprehensive documentation
-- Fill in some API gaps (`.allSettled()` and so on)
-- Enhance `juro::promise_ptr` with conveniency aliases
+- [ ] Comprehensive test suite 
+- [ ] Comprehensive documentation
+  - [x] Complete API comments
+  - [ ] Generate and serve Doxygen documentation
+  - [x] Complete usage guide
+  - [ ] Build instructions
+  - [ ] Examples
+  - [ ] Add CONTRIBUTING.md / collaboration guides
+- [ ] Fill in some API gaps
+  - [ ] `juro::all_settled()`
+  - [ ] `juro::any()`
+- [ ] Add `operator>>` for `juro::promise_ptr` conveniency chaining
